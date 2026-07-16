@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tri des contacts Pipedrive</title>
+<style>
+  :root{
+    --bg:#0F1420;
+    --panel:#171D2C;
+    --panel-2:#1E2740;
+    --border:#2A3450;
+    --text:#E8ECF6;
+    --text-dim:#8B93AC;
+    --accent:#5B7FFF;
+    --accent-2:#2FD1B0;
+    --warn:#FF8A5B;
+    --danger:#FF5C7A;
+    --mono:'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+    --sans:'Inter', -apple-system, 'Segoe UI', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    line-height:1.5;
+    padding:0;
+  }
+  .wrap{
+    max-width:1000px;
+    margin:0 auto;
+    padding:40px 24px 80px;
+  }
+  header{
+    margin-bottom:32px;
+    border-bottom:1px solid var(--border);
+    padding-bottom:24px;
+  }
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:12px;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    color:var(--accent-2);
+    margin:0 0 8px;
+  }
+  h1{
+    font-size:28px;
+    font-weight:700;
+    margin:0 0 8px;
+    letter-spacing:-0.01em;
+  }
+  .sub{
+    color:var(--text-dim);
+    font-size:14px;
+    max-width:640px;
+  }
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:24px;
+    margin-bottom:24px;
+  }
+  .row{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:16px;
+  }
+  @media (max-width:640px){ .row{grid-template-columns:1fr;} }
+  label{
+    display:block;
+    font-size:12px;
+    font-family:var(--mono);
+    color:var(--text-dim);
+    margin-bottom:6px;
+  }
+  input[type=text], input[type=password]{
+    width:100%;
+    background:var(--panel-2);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:10px 12px;
+    border-radius:6px;
+    font-size:14px;
+    font-family:var(--mono);
+  }
+  input:focus{
+    outline:none;
+    border-color:var(--accent);
+  }
+  .hint{
+    font-size:12px;
+    color:var(--text-dim);
+    margin-top:6px;
+  }
+  .actions{
+    margin-top:20px;
+    display:flex;
+    align-items:center;
+    gap:14px;
+  }
+  button{
+    background:var(--accent);
+    color:#fff;
+    border:none;
+    padding:11px 20px;
+    border-radius:6px;
+    font-size:14px;
+    font-weight:600;
+    cursor:pointer;
+    font-family:var(--sans);
+  }
+  button:hover{ filter:brightness(1.08); }
+  button:disabled{
+    background:var(--panel-2);
+    color:var(--text-dim);
+    cursor:not-allowed;
+  }
+  button.ghost{
+    background:transparent;
+    border:1px solid var(--border);
+    color:var(--text);
+  }
+  .status{
+    font-family:var(--mono);
+    font-size:13px;
+    color:var(--text-dim);
+  }
+  .status.err{ color:var(--danger); }
+  .status.ok{ color:var(--accent-2); }
+  .stats{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:16px;
+    margin-bottom:24px;
+  }
+  .stat{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:20px;
+  }
+  .stat .n{
+    font-family:var(--mono);
+    font-size:32px;
+    font-weight:700;
+    color:var(--accent-2);
+  }
+  .stat.b .n{ color:var(--accent); }
+  .stat .l{
+    font-size:13px;
+    color:var(--text-dim);
+    margin-top:4px;
+  }
+  .section-title{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:12px;
+  }
+  .section-title h2{
+    font-size:15px;
+    margin:0;
+    font-family:var(--mono);
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:var(--text-dim);
+  }
+  table{
+    width:100%;
+    border-collapse:collapse;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:10px;
+    overflow:hidden;
+    font-size:13px;
+  }
+  thead th{
+    text-align:left;
+    background:var(--panel-2);
+    padding:10px 14px;
+    font-family:var(--mono);
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    color:var(--text-dim);
+    border-bottom:1px solid var(--border);
+  }
+  tbody td{
+    padding:9px 14px;
+    border-bottom:1px solid var(--border);
+    color:var(--text);
+  }
+  tbody tr:last-child td{ border-bottom:none; }
+  tbody tr:hover{ background:var(--panel-2); }
+  .empty{
+    padding:24px;
+    text-align:center;
+    color:var(--text-dim);
+    font-size:13px;
+  }
+  .table-scroll{
+    max-height:360px;
+    overflow-y:auto;
+    border-radius:10px;
+  }
+  .table-scroll table{ border-radius:0; }
+  details summary{
+    cursor:pointer;
+    color:var(--text-dim);
+    font-size:13px;
+    margin-bottom:12px;
+  }
+  footer{
+    margin-top:40px;
+    text-align:center;
+    font-size:12px;
+    color:var(--text-dim);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Pipedrive · Segmentation de contacts</p>
+    <h1>Tri des contacts par email / téléphone</h1>
+    <p class="sub">Récupère tous les contacts (Persons) de votre compte Pipedrive et les répartit en deux listes : ceux avec uniquement un email, et ceux avec email + téléphone. Chaque personne utilise son propre jeton API — aucune donnée n'est partagée entre utilisateurs.</p>
+  </header>
+
+  <div class="panel">
+    <div class="row">
+      <div>
+        <label for="domain">Domaine Pipedrive</label>
+        <input type="text" id="domain" placeholder="monentreprise">
+        <p class="hint">Le sous-domaine dans https://<strong>monentreprise</strong>.pipedrive.com</p>
+      </div>
+      <div>
+        <label for="token">Jeton API (API token)</label>
+        <input type="password" id="token" placeholder="••••••••••••••••••••••">
+        <p class="hint">Paramètres → Préférences personnelles → API dans Pipedrive</p>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="loadBtn" onclick="loadContacts()">Charger les contacts</button>
+      <span class="status" id="status"></span>
+    </div>
+    <details style="margin-top:16px;">
+      <summary>Le jeton reste-t-il stocké quelque part ?</summary>
+      <p class="hint">Non. Il n'est utilisé que dans votre navigateur, pour cette session, et n'est jamais envoyé ailleurs qu'à l'API officielle Pipedrive (api.pipedrive.com). Cette page ne stocke rien côté serveur — il n'y a même pas de serveur.</p>
+    </details>
+  </div>
+
+  <div class="stats" id="stats" style="display:none;">
+    <div class="stat a">
+      <div class="n" id="countA">0</div>
+      <div class="l">Contacts — email uniquement</div>
+    </div>
+    <div class="stat b">
+      <div class="n" id="countB">0</div>
+      <div class="l">Contacts — email + téléphone</div>
+    </div>
+  </div>
+
+  <div id="results" style="display:none;">
+
+    <div class="section-title">
+      <h2>Email uniquement (<span id="countA2">0</span>)</h2>
+      <button class="ghost" onclick="exportCsv('A')">Exporter CSV</button>
+    </div>
+    <div class="table-scroll panel" style="padding:0; margin-bottom:32px;" id="tableA"></div>
+
+    <div class="section-title">
+      <h2>Email + téléphone (<span id="countB2">0</span>)</h2>
+      <button class="ghost" onclick="exportCsv('B')">Exporter CSV</button>
+    </div>
+    <div class="table-scroll panel" style="padding:0;" id="tableB"></div>
+
+  </div>
+
+  <footer>Outil léger, 100% côté navigateur — aucune donnée ne transite par un tiers.</footer>
+
+</div>
+
+<script>
+let groupA = []; // email only
+let groupB = []; // email + phone
+
+function setStatus(msg, cls){
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'status' + (cls ? ' '+cls : '');
+}
+
+function cleanDomain(raw){
+  return raw.trim()
+    .replace(/^https?:\/\//,'')
+    .replace(/\.pipedrive\.com.*$/,'')
+    .replace(/\/.*$/,'');
+}
+
+async function loadContacts(){
+  const domain = cleanDomain(document.getElementById('domain').value);
+  const token = document.getElementById('token').value.trim();
+  const btn = document.getElementById('loadBtn');
+
+  if(!domain || !token){
+    setStatus('Merci de renseigner le domaine et le jeton API.', 'err');
+    return;
+  }
+
+  btn.disabled = true;
+  document.getElementById('stats').style.display = 'none';
+  document.getElementById('results').style.display = 'none';
+  groupA = [];
+  groupB = [];
+
+  let start = 0;
+  const limit = 500;
+  let total = 0;
+  let hasMore = true;
+
+  try{
+    while(hasMore){
+      setStatus(`Chargement… ${total} contacts récupérés`);
+      const url = `https://${domain}.pipedrive.com/api/v1/persons?api_token=${encodeURIComponent(token)}&start=${start}&limit=${limit}`;
+      const res = await fetch(url);
+
+      if(!res.ok){
+        if(res.status === 401){
+          throw new Error('Jeton API invalide ou expiré (401).');
+        }
+        throw new Error(`Erreur HTTP ${res.status}`);
+      }
+
+      const json = await res.json();
+
+      if(json.success === false){
+        throw new Error(json.error || 'Erreur retournée par Pipedrive.');
+      }
+
+      const persons = json.data || [];
+      total += persons.length;
+
+      for(const p of persons){
+        const emails = (p.email || []).map(e => e.value).filter(Boolean);
+        const phones = (p.phone || []).map(ph => ph.value).filter(Boolean);
+        if(emails.length === 0) continue; // on ignore les contacts sans email
+
+        const row = {
+          name: p.name || '(sans nom)',
+          org: (p.org_id && p.org_id.name) ? p.org_id.name : '',
+          email: emails.join(' / '),
+          phone: phones.join(' / ')
+        };
+
+        if(phones.length > 0){
+          groupB.push(row);
+        } else {
+          groupA.push(row);
+        }
+      }
+
+      const pagination = json.additional_data && json.additional_data.pagination;
+      hasMore = pagination ? pagination.more_items_in_collection : false;
+      start = pagination ? pagination.next_start : start + limit;
+
+      if(!persons.length) hasMore = false;
+    }
+
+    setStatus(`Terminé — ${total} contacts analysés.`, 'ok');
+    renderResults();
+
+  } catch(err){
+    console.error(err);
+    let msg = err.message || 'Échec du chargement.';
+    if(msg.includes('Failed to fetch')){
+      msg = 'Requête bloquée (réseau ou CORS). Vérifiez le domaine et votre connexion.';
+    }
+    setStatus(msg, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderTable(container, rows, showPhone){
+  if(rows.length === 0){
+    container.innerHTML = '<div class="empty">Aucun contact dans cette catégorie.</div>';
+    return;
+  }
+  let html = '<table><thead><tr><th>Nom</th><th>Organisation</th><th>Email</th>';
+  if(showPhone) html += '<th>Téléphone</th>';
+  html += '</tr></thead><tbody>';
+  for(const r of rows){
+    html += `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.org)}</td><td>${escapeHtml(r.email)}</td>`;
+    if(showPhone) html += `<td>${escapeHtml(r.phone)}</td>`;
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+function escapeHtml(str){
+  return String(str).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
+function renderResults(){
+  document.getElementById('countA').textContent = groupA.length;
+  document.getElementById('countB').textContent = groupB.length;
+  document.getElementById('countA2').textContent = groupA.length;
+  document.getElementById('countB2').textContent = groupB.length;
+  document.getElementById('stats').style.display = 'grid';
+  document.getElementById('results').style.display = 'block';
+
+  renderTable(document.getElementById('tableA'), groupA, false);
+  renderTable(document.getElementById('tableB'), groupB, true);
+}
+
+function exportCsv(which){
+  const rows = which === 'A' ? groupA : groupB;
+  const showPhone = which === 'B';
+  if(rows.length === 0) return;
+
+  const headers = showPhone ? ['Nom','Organisation','Email','Telephone'] : ['Nom','Organisation','Email'];
+  const lines = [headers.join(';')];
+  for(const r of rows){
+    const line = showPhone
+      ? [r.name, r.org, r.email, r.phone]
+      : [r.name, r.org, r.email];
+    lines.push(line.map(v => `"${String(v).replace(/"/g,'""')}"`).join(';'));
+  }
+  const csv = lines.join('\n');
+  const blob = new Blob(['\ufeff' + csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = which === 'A' ? 'contacts_email_seul.csv' : 'contacts_email_telephone.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
