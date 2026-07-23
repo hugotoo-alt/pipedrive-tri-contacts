@@ -220,6 +220,56 @@
     font-size:12px;
     color:var(--text-dim);
   }
+  select{
+    width:100%;
+    background:var(--panel-2);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:10px 12px;
+    border-radius:6px;
+    font-size:14px;
+    font-family:var(--mono);
+  }
+  select:focus{ outline:none; border-color:var(--accent); }
+  .filter-bar{
+    display:flex;
+    align-items:flex-end;
+    gap:16px;
+    margin-bottom:20px;
+  }
+  .filter-bar > div{ flex:1; max-width:320px; }
+  .badge{
+    display:inline-block;
+    padding:2px 8px;
+    border-radius:100px;
+    font-size:11px;
+    font-family:var(--mono);
+    border:1px solid var(--border);
+    background:var(--panel-2);
+    color:var(--text-dim);
+    white-space:nowrap;
+  }
+  .label-breakdown{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+    margin-bottom:24px;
+  }
+  .label-breakdown th{
+    text-align:left;
+    padding:8px 14px;
+    font-family:var(--mono);
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    color:var(--text-dim);
+    border-bottom:1px solid var(--border);
+  }
+  .label-breakdown td{
+    padding:8px 14px;
+    border-bottom:1px solid var(--border);
+  }
+  .label-breakdown tr:last-child td{ border-bottom:none; }
 </style>
 </head>
 <body>
@@ -267,6 +317,25 @@
 
   <div id="results" style="display:none;">
 
+    <div class="filter-bar">
+      <div>
+        <label for="labelFilter">Filtrer par étiquette</label>
+        <select id="labelFilter" onchange="applyFilter()">
+          <option value="__all__">Toutes les étiquettes</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="section-title">
+      <h2>Répartition par étiquette</h2>
+    </div>
+    <div class="panel" style="padding:0; margin-bottom:32px;">
+      <table class="label-breakdown" id="labelBreakdown">
+        <thead><tr><th>Étiquette</th><th>Email uniquement</th><th>Email + téléphone</th><th>Total</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
     <div class="section-title">
       <h2>Email uniquement (<span id="countA2">0</span>)</h2>
       <button class="ghost" onclick="exportCsv('A')">Exporter CSV</button>
@@ -286,8 +355,10 @@
 </div>
 
 <script>
-let groupA = []; // email only
-let groupB = []; // email + phone
+let allContacts = [];   // tous les contacts avec email, avant filtrage : {name, org, email, phone, hasPhone, labels:[names]}
+let groupA = [];         // sous-ensemble affiché, email uniquement
+let groupB = [];         // sous-ensemble affiché, email + phone
+let labelIdToName = {};  // mapping id étiquette -> nom
 
 function setStatus(msg, cls){
   const el = document.getElementById('status');
@@ -300,6 +371,35 @@ function cleanDomain(raw){
     .replace(/^https?:\/\//,'')
     .replace(/\.pipedrive\.com.*$/,'')
     .replace(/\/.*$/,'');
+}
+
+async function fetchLabelMap(domain, token){
+  labelIdToName = {};
+  try{
+    const url = `https://${domain}.pipedrive.com/api/v1/personFields?api_token=${encodeURIComponent(token)}`;
+    const res = await fetch(url);
+    if(!res.ok) return;
+    const json = await res.json();
+    const fields = json.data || [];
+    const labelField = fields.find(f => f.key === 'label' || f.key === 'label_ids');
+    if(labelField && Array.isArray(labelField.options)){
+      for(const opt of labelField.options){
+        labelIdToName[String(opt.id)] = opt.label || opt.name || String(opt.id);
+      }
+    }
+  } catch(e){
+    console.warn('Impossible de récupérer les étiquettes personFields', e);
+  }
+}
+
+function getLabelNames(p){
+  const ids = new Set();
+  if(p.label !== undefined && p.label !== null) ids.add(String(p.label));
+  if(Array.isArray(p.label_ids)){
+    for(const id of p.label_ids) ids.add(String(id));
+  }
+  if(ids.size === 0) return [];
+  return Array.from(ids).map(id => labelIdToName[id] || `Étiquette #${id}`);
 }
 
 async function loadContacts(){
@@ -315,8 +415,7 @@ async function loadContacts(){
   btn.disabled = true;
   document.getElementById('stats').style.display = 'none';
   document.getElementById('results').style.display = 'none';
-  groupA = [];
-  groupB = [];
+  allContacts = [];
 
   let start = 0;
   const limit = 500;
@@ -324,6 +423,9 @@ async function loadContacts(){
   let hasMore = true;
 
   try{
+    setStatus('Chargement des étiquettes…');
+    await fetchLabelMap(domain, token);
+
     while(hasMore){
       setStatus(`Chargement… ${total} contacts récupérés`);
       const url = `https://${domain}.pipedrive.com/api/v1/persons?api_token=${encodeURIComponent(token)}&start=${start}&limit=${limit}`;
@@ -348,20 +450,18 @@ async function loadContacts(){
       for(const p of persons){
         const emails = (p.email || []).map(e => e.value).filter(Boolean);
         const phones = (p.phone || []).map(ph => ph.value).filter(Boolean);
-        if(emails.length === 0) continue; // on ignore les contacts sans email
+        if(emails.length === 0) continue;
 
-        const row = {
+        const labels = getLabelNames(p);
+
+        allContacts.push({
           name: p.name || '(sans nom)',
           org: (p.org_id && p.org_id.name) ? p.org_id.name : '',
           email: emails.join(' / '),
-          phone: phones.join(' / ')
-        };
-
-        if(phones.length > 0){
-          groupB.push(row);
-        } else {
-          groupA.push(row);
-        }
+          phone: phones.join(' / '),
+          hasPhone: phones.length > 0,
+          labels: labels.length ? labels : ['Sans étiquette']
+        });
       }
 
       const pagination = json.additional_data && json.additional_data.pagination;
@@ -372,7 +472,8 @@ async function loadContacts(){
     }
 
     setStatus(`Terminé — ${total} contacts analysés.`, 'ok');
-    renderResults();
+    populateLabelFilter();
+    applyFilter();
 
   } catch(err){
     console.error(err);
@@ -386,6 +487,54 @@ async function loadContacts(){
   }
 }
 
+function populateLabelFilter(){
+  const allLabels = new Set();
+  for(const c of allContacts){
+    for(const l of c.labels) allLabels.add(l);
+  }
+  const select = document.getElementById('labelFilter');
+  select.innerHTML = '<option value="__all__">Toutes les étiquettes</option>';
+  Array.from(allLabels).sort((a,b) => a.localeCompare(b)).forEach(l => {
+    const opt = document.createElement('option');
+    opt.value = l;
+    opt.textContent = l;
+    select.appendChild(opt);
+  });
+}
+
+function applyFilter(){
+  const selected = document.getElementById('labelFilter').value;
+  const filtered = selected === '__all__'
+    ? allContacts
+    : allContacts.filter(c => c.labels.includes(selected));
+
+  groupA = filtered.filter(c => !c.hasPhone);
+  groupB = filtered.filter(c => c.hasPhone);
+
+  renderResults();
+  renderLabelBreakdown();
+}
+
+function renderLabelBreakdown(){
+  const counts = {};
+  for(const c of allContacts){
+    for(const l of c.labels){
+      if(!counts[l]) counts[l] = {a:0, b:0};
+      if(c.hasPhone) counts[l].b++; else counts[l].a++;
+    }
+  }
+  const tbody = document.querySelector('#labelBreakdown tbody');
+  const labels = Object.keys(counts).sort((a,b) => a.localeCompare(b));
+  if(labels.length === 0){
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">Aucune étiquette détectée.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = labels.map(l => {
+    const c = counts[l];
+    return `<tr><td><span class="badge">${escapeHtml(l)}</span></td><td>${c.a}</td><td>${c.b}</td><td>${c.a + c.b}</td></tr>`;
+  }).join('');
+}
+
 function renderTable(container, rows, showPhone){
   if(rows.length === 0){
     container.innerHTML = '<div class="empty">Aucun contact dans cette catégorie.</div>';
@@ -393,10 +542,11 @@ function renderTable(container, rows, showPhone){
   }
   let html = '<table><thead><tr><th>Nom</th><th>Organisation</th><th>Email</th>';
   if(showPhone) html += '<th>Téléphone</th>';
-  html += '</tr></thead><tbody>';
+  html += '<th>Étiquette(s)</th></tr></thead><tbody>';
   for(const r of rows){
     html += `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.org)}</td><td>${escapeHtml(r.email)}</td>`;
     if(showPhone) html += `<td>${escapeHtml(r.phone)}</td>`;
+    html += `<td>${r.labels.map(l => `<span class="badge">${escapeHtml(l)}</span>`).join(' ')}</td>`;
     html += '</tr>';
   }
   html += '</tbody></table>';
@@ -426,12 +576,14 @@ function exportCsv(which){
   const showPhone = which === 'B';
   if(rows.length === 0) return;
 
-  const headers = showPhone ? ['Nom','Organisation','Email','Telephone'] : ['Nom','Organisation','Email'];
+  const headers = showPhone
+    ? ['Nom','Organisation','Email','Telephone','Etiquettes']
+    : ['Nom','Organisation','Email','Etiquettes'];
   const lines = [headers.join(';')];
   for(const r of rows){
     const line = showPhone
-      ? [r.name, r.org, r.email, r.phone]
-      : [r.name, r.org, r.email];
+      ? [r.name, r.org, r.email, r.phone, r.labels.join(', ')]
+      : [r.name, r.org, r.email, r.labels.join(', ')];
     lines.push(line.map(v => `"${String(v).replace(/"/g,'""')}"`).join(';'));
   }
   const csv = lines.join('\n');
