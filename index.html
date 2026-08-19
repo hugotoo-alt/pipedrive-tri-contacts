@@ -270,6 +270,44 @@
     border-bottom:1px solid var(--border);
   }
   .label-breakdown tr:last-child td{ border-bottom:none; }
+  .dup-table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+  }
+  .dup-table th{
+    text-align:left;
+    padding:8px 14px;
+    font-family:var(--mono);
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    color:var(--text-dim);
+    border-bottom:1px solid var(--border);
+  }
+  .dup-table td{
+    padding:8px 14px;
+    border-bottom:1px solid var(--border);
+    vertical-align:top;
+  }
+  .dup-table tr:last-child td{ border-bottom:none; }
+  .count-pill{
+    display:inline-block;
+    padding:2px 8px;
+    border-radius:100px;
+    font-size:11px;
+    font-family:var(--mono);
+    background:rgba(255,138,91,0.15);
+    color:var(--warn);
+    border:1px solid rgba(255,138,91,0.35);
+  }
+  .dup-table a{
+    color:var(--accent);
+    text-decoration:none;
+  }
+  .dup-table a:hover{ text-decoration:underline; }
+  .deal-list{ margin:0; padding:0; list-style:none; }
+  .deal-list li{ margin-bottom:2px; }
 </style>
 </head>
 <body>
@@ -337,6 +375,26 @@
     </div>
 
     <div class="section-title">
+      <h2>Contacts en doublon (même email) — <span id="dupContactCount">0</span></h2>
+    </div>
+    <div class="panel" style="padding:0; margin-bottom:32px;">
+      <table class="dup-table" id="dupContactsTable">
+        <thead><tr><th>Email</th><th>Nb. de fiches</th><th>Contacts concernés</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="section-title">
+      <h2>Affaires en doublon (même contact/organisation, plusieurs affaires ouvertes) — <span id="dupDealCount">0</span></h2>
+    </div>
+    <div class="panel" style="padding:0; margin-bottom:32px;">
+      <table class="dup-table" id="dupDealsTable">
+        <thead><tr><th>Contact / Organisation</th><th>Nb. affaires ouvertes</th><th>Affaires</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="section-title">
       <h2>Email uniquement (<span id="countA2">0</span>)</h2>
       <button class="ghost" onclick="exportCsv('A')">Exporter CSV</button>
     </div>
@@ -355,10 +413,11 @@
 </div>
 
 <script>
-let allContacts = [];   // tous les contacts avec email, avant filtrage : {name, org, email, phone, hasPhone, labels:[names]}
+let allContacts = [];   // tous les contacts avec email, avant filtrage : {id, name, org, email, phone, hasPhone, labels:[names]}
 let groupA = [];         // sous-ensemble affiché, email uniquement
 let groupB = [];         // sous-ensemble affiché, email + phone
 let labelIdToName = {};  // mapping id étiquette -> nom
+let currentDomain = '';  // pour construire les liens vers Pipedrive
 
 function setStatus(msg, cls){
   const el = document.getElementById('status');
@@ -381,6 +440,7 @@ async function fetchLabelMap(domain, token){
     if(!res.ok) return;
     const json = await res.json();
     const fields = json.data || [];
+    // Le champ étiquette peut s'appeler 'label' (mono-étiquette) ou 'label_ids' (multi-étiquettes)
     const labelField = fields.find(f => f.key === 'label' || f.key === 'label_ids');
     if(labelField && Array.isArray(labelField.options)){
       for(const opt of labelField.options){
@@ -416,6 +476,7 @@ async function loadContacts(){
   document.getElementById('stats').style.display = 'none';
   document.getElementById('results').style.display = 'none';
   allContacts = [];
+  currentDomain = domain;
 
   let start = 0;
   const limit = 500;
@@ -450,11 +511,12 @@ async function loadContacts(){
       for(const p of persons){
         const emails = (p.email || []).map(e => e.value).filter(Boolean);
         const phones = (p.phone || []).map(ph => ph.value).filter(Boolean);
-        if(emails.length === 0) continue;
+        if(emails.length === 0) continue; // on ignore les contacts sans email
 
         const labels = getLabelNames(p);
 
         allContacts.push({
+          id: p.id,
           name: p.name || '(sans nom)',
           org: (p.org_id && p.org_id.name) ? p.org_id.name : '',
           email: emails.join(' / '),
@@ -471,9 +533,14 @@ async function loadContacts(){
       if(!persons.length) hasMore = false;
     }
 
-    setStatus(`Terminé — ${total} contacts analysés.`, 'ok');
+    setStatus(`Chargement des affaires…`);
+    const deals = await fetchOpenDeals(domain, token);
+
+    setStatus(`Terminé — ${total} contacts et ${deals.length} affaires ouvertes analysés.`, 'ok');
     populateLabelFilter();
     applyFilter();
+    renderContactDuplicates();
+    renderDealDuplicates(deals);
 
   } catch(err){
     console.error(err);
@@ -516,7 +583,7 @@ function applyFilter(){
 }
 
 function renderLabelBreakdown(){
-  const counts = {};
+  const counts = {}; // label -> {a, b}
   for(const c of allContacts){
     for(const l of c.labels){
       if(!counts[l]) counts[l] = {a:0, b:0};
@@ -533,6 +600,106 @@ function renderLabelBreakdown(){
     const c = counts[l];
     return `<tr><td><span class="badge">${escapeHtml(l)}</span></td><td>${c.a}</td><td>${c.b}</td><td>${c.a + c.b}</td></tr>`;
   }).join('');
+}
+
+async function fetchOpenDeals(domain, token){
+  const deals = [];
+  let start = 0;
+  const limit = 500;
+  let hasMore = true;
+
+  while(hasMore){
+    const url = `https://${domain}.pipedrive.com/api/v1/deals?status=open&api_token=${encodeURIComponent(token)}&start=${start}&limit=${limit}`;
+    const res = await fetch(url);
+    if(!res.ok) break; // on n'interrompt pas tout le chargement pour une erreur sur les affaires
+    const json = await res.json();
+    if(json.success === false) break;
+
+    const batch = json.data || [];
+    for(const d of batch){
+      deals.push({
+        id: d.id,
+        title: d.title || `Affaire #${d.id}`,
+        personId: d.person_id ? d.person_id.value : null,
+        personName: d.person_id ? d.person_id.name : null,
+        orgId: d.org_id ? d.org_id.value : null,
+        orgName: d.org_id ? d.org_id.name : null
+      });
+    }
+
+    const pagination = json.additional_data && json.additional_data.pagination;
+    hasMore = pagination ? pagination.more_items_in_collection : false;
+    start = pagination ? pagination.next_start : start + limit;
+    if(!batch.length) hasMore = false;
+  }
+
+  return deals;
+}
+
+function renderContactDuplicates(){
+  const byEmail = {};
+  for(const c of allContacts){
+    const key = c.email.trim().toLowerCase();
+    if(!key) continue;
+    if(!byEmail[key]) byEmail[key] = [];
+    byEmail[key].push(c);
+  }
+
+  const duplicateGroups = Object.entries(byEmail).filter(([, list]) => list.length > 1);
+  document.getElementById('dupContactCount').textContent = duplicateGroups.length;
+
+  const tbody = document.querySelector('#dupContactsTable tbody');
+  if(duplicateGroups.length === 0){
+    tbody.innerHTML = '<tr><td colspan="3" class="empty">Aucun email en double détecté.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = duplicateGroups
+    .sort((a, b) => b[1].length - a[1].length)
+    .map(([email, list]) => {
+      const names = list.map(c => {
+        const link = c.id ? `https://${currentDomain}.pipedrive.com/person/${c.id}` : null;
+        const label = escapeHtml(c.name) + (c.org ? ` (${escapeHtml(c.org)})` : '');
+        return link ? `<a href="${link}" target="_blank" rel="noopener">${label}</a>` : label;
+      }).join('<br>');
+      return `<tr><td>${escapeHtml(email)}</td><td><span class="count-pill">${list.length}</span></td><td>${names}</td></tr>`;
+    }).join('');
+}
+
+function renderDealDuplicates(deals){
+  const byKey = {};
+  for(const d of deals){
+    let key = null, label = null;
+    if(d.personId){
+      key = `p_${d.personId}`;
+      label = d.personName || `Contact #${d.personId}`;
+    } else if(d.orgId){
+      key = `o_${d.orgId}`;
+      label = d.orgName || `Organisation #${d.orgId}`;
+    }
+    if(!key) continue; // affaire sans contact ni organisation liée, on l'ignore
+    if(!byKey[key]) byKey[key] = { label, deals: [] };
+    byKey[key].deals.push(d);
+  }
+
+  const duplicateGroups = Object.values(byKey).filter(g => g.deals.length > 1);
+  document.getElementById('dupDealCount').textContent = duplicateGroups.length;
+
+  const tbody = document.querySelector('#dupDealsTable tbody');
+  if(duplicateGroups.length === 0){
+    tbody.innerHTML = '<tr><td colspan="3" class="empty">Aucune affaire en doublon détectée.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = duplicateGroups
+    .sort((a, b) => b.deals.length - a.deals.length)
+    .map(g => {
+      const dealsHtml = g.deals.map(d => {
+        const link = `https://${currentDomain}.pipedrive.com/deal/${d.id}`;
+        return `<li><a href="${link}" target="_blank" rel="noopener">${escapeHtml(d.title)}</a></li>`;
+      }).join('');
+      return `<tr><td>${escapeHtml(g.label)}</td><td><span class="count-pill">${g.deals.length}</span></td><td><ul class="deal-list">${dealsHtml}</ul></td></tr>`;
+    }).join('');
 }
 
 function renderTable(container, rows, showPhone){
